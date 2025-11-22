@@ -305,13 +305,9 @@
         const CONFIG = {
             SPREADSHEET_ID: '1tOgX3dpNJepbe6GERLjmWwvEOSU3UetybRxtGoogdcY',
             PASSWORD: 'clmc2024', // Change this to your desired password
-            // Sheet GIDs (get from URL when viewing each sheet)
-            SHEET_GIDS: {
-                workOrders: '0',      // Change to actual GID
-                inventory: '1061882787',  // Change to actual GID
-                reportDelivery: '2',  // Change to actual GID
-                reminders: '3'        // Change to actual GID
-            }
+            // IMPORTANT: Paste your Google Apps Script URL here after deployment
+            APPS_SCRIPT_URL: 'https://script.google.com/macros/s/AKfycbxEi0FWzYI_ntV9SZZKkLhdlsOiH0s1Dv9sjTEx-p9rD51lfkpucoubA0ljK8rYSJOVag/exec'
+            // Example: 'https://script.google.com/macros/s/AKfycby.../exec'
         };
 
         // Global data storage
@@ -356,13 +352,37 @@
                 document.getElementById('loadingSpinner').classList.remove('hidden');
                 document.getElementById('mainContent').classList.add('hidden');
 
-                // Load all sheets
-                await Promise.all([
-                    loadWorkOrders(),
-                    loadInventory(),
-                    loadReportDelivery(),
-                    loadReminders()
-                ]);
+                // Check if Apps Script URL is configured
+                if (CONFIG.APPS_SCRIPT_URL === 'https://script.google.com/macros/s/AKfycbxEi0FWzYI_ntV9SZZKkLhdlsOiH0s1Dv9sjTEx-p9rD51lfkpucoubA0ljK8rYSJOVag/exec') {
+                    alert('⚠️ Please configure your Google Apps Script URL!\n\nSee APPS_SCRIPT_SETUP.md for instructions.');
+                    document.getElementById('loadingSpinner').classList.add('hidden');
+                    return;
+                }
+
+                // Load all data in one call
+                const response = await fetch(`${CONFIG.APPS_SCRIPT_URL}?sheet=all`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+
+                workOrders = data.workOrders || [];
+                inventory = data.inventory || [];
+                reportDelivery = data.reportDelivery || [];
+                reminders = data.reminders || [];
+
+                console.log('Data loaded successfully:', {
+                    workOrders: workOrders.length,
+                    inventory: inventory.length,
+                    reportDelivery: reportDelivery.length,
+                    reminders: reminders.length
+                });
 
                 initializeDashboard();
                 updateLastUpdateTime();
@@ -371,88 +391,14 @@
                 document.getElementById('mainContent').classList.remove('hidden');
             } catch (error) {
                 console.error('Error loading data:', error);
-                alert('Error loading data. Please check your internet connection and try again.');
+                alert('Error loading data: ' + error.message + '\n\nPlease check:\n1. Your Google Apps Script is deployed\n2. The URL is correct\n3. Your internet connection');
+                document.getElementById('loadingSpinner').classList.add('hidden');
             }
         }
 
-        async function loadWorkOrders() {
-            const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/export?format=csv&gid=${CONFIG.SHEET_GIDS.workOrders}`;
-            const response = await fetch(url);
-            const text = await response.text();
-            workOrders = parseCSVData(text);
-            console.log('Work Orders loaded:', workOrders.length);
-        }
-
-        async function loadInventory() {
-            const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/export?format=csv&gid=${CONFIG.SHEET_GIDS.inventory}`;
-            const response = await fetch(url);
-            const text = await response.text();
-            inventory = parseCSVData(text);
-            console.log('Inventory loaded:', inventory.length);
-        }
-
-        async function loadReportDelivery() {
-            const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/export?format=csv&gid=${CONFIG.SHEET_GIDS.reportDelivery}`;
-            const response = await fetch(url);
-            const text = await response.text();
-            reportDelivery = parseCSVData(text);
-            console.log('Report Delivery loaded:', reportDelivery.length);
-        }
-
-        async function loadReminders() {
-            const url = `https://docs.google.com/spreadsheets/d/${CONFIG.SPREADSHEET_ID}/export?format=csv&gid=${CONFIG.SHEET_GIDS.reminders}`;
-            const response = await fetch(url);
-            const text = await response.text();
-            reminders = parseCSVData(text);
-            console.log('Reminders loaded:', reminders.length);
-        }
-
-        function parseCSVData(csvText) {
-            const lines = csvText.trim().split('\n');
-            if (lines.length < 2) return [];
-            
-            // Parse header
-            const headers = parseCSVLine(lines[0]);
-            
-            // Parse data rows
-            return lines.slice(1)
-                .filter(line => line.trim())
-                .map(line => {
-                    const values = parseCSVLine(line);
-                    const obj = {};
-                    headers.forEach((header, index) => {
-                        obj[header] = values[index] || '';
-                    });
-                    return obj;
-                })
-                .filter(row => Object.values(row).some(val => val && val.trim()));
-        }
-
-        function parseCSVLine(line) {
-            const result = [];
-            let current = '';
-            let inQuotes = false;
-            
-            for (let i = 0; i < line.length; i++) {
-                const char = line[i];
-                const nextChar = line[i + 1];
-                
-                if (char === '"') {
-                    if (inQuotes && nextChar === '"') {
-                        current += '"';
-                        i++;
-                    } else {
-                        inQuotes = !inQuotes;
-                    }
-                } else if (char === ',' && !inQuotes) {
-                    result.push(current);
-                    current = '';
-                } else {
-                    current += char;
-                }
-            }
-            result.push(current);
-            return result;
+        // Data refresh function
+        async function refreshData() {
+            await loadAllData();
         }
 
         // Dashboard Initialization
@@ -779,10 +725,6 @@
         function updateLastUpdateTime() {
             const now = new Date();
             document.getElementById('lastUpdate').textContent = `Last updated: ${now.toLocaleString()}`;
-        }
-
-        async function refreshData() {
-            await loadAllData();
         }
 
         // PDF Export
